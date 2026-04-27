@@ -20,7 +20,8 @@ type PanelState = {
 };
 
 const DEFAULT_STATE: PanelState = {
-  topic: "/cmd_wrench",
+  // topic: "/cmd_wrench",
+  topic: "/steelhead/controls/input_forces",
   // These max and min values where translated from steelhead/src/steelhead_controls/src/thrust_allocator.cpp
   surgeMin: -24,
   surgeMax: 32,
@@ -67,8 +68,13 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
 
     context.watch("currentTime");
 
-    context.advertise?.(config.topic, "geometry_msgs/WrenchStamped", { latching: false });
-  }, [context, config.topic]);
+    context.advertise?.(config.topic, "geometry_msgs/Wrench", {
+      latching: false,
+      qos: {
+        reliability: "reliable",
+        durability: "volatile",
+    },
+  });  }, [context, config.topic]);
 
   // invoke the done callback once the render is complete
   useEffect(() => {
@@ -77,19 +83,11 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
 
   const publishWrench = useCallback(
     (surgeVal: number, yawVal: number) => {
-      const now = Date.now();
+      console.log("publishing to", config.topic, surgeVal, yawVal); // add this
+      // const now = Date.now();
       context.publish?.(config.topic, {
-        header: {
-          stamp: {
-            sec: Math.floor(now / 1000),
-            nanosec: (now % 1000) * 1e6,
-          },
-          frame_id: "base_link",
-        },
-        wrench: {
-          force: { x: surgeVal, y: 0, z: 0 },
-          torque: { x: 0, y: 0, z: yawVal },
-        },
+        force: { x: surgeVal, y: 0, z: 0 },
+        torque: { x: 0, y: 0, z: yawVal },
       });
     },
     [context, config.topic],
@@ -164,36 +162,36 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
     }
   }, [config.zeroOnRelease, publishWrench]);
 
-  useEffect(() => {
-    if (heldButton == undefined) return;
+  // useEffect(() => {
+  //   if (heldButton == undefined) return;
 
-    const intervalMs = 1000 / config.publishRate;
-    const handle = setInterval(() => {
-      // Ramp surge toward target
-      const surgeDiff = targetSurgeRef.current - surgeRef.current;
-      const newSurge =
-        Math.abs(surgeDiff) <= config.surgeRamp
-          ? targetSurgeRef.current
-          : surgeRef.current + Math.sign(surgeDiff) * config.surgeRamp;
+  //   const intervalMs = 1000 / config.publishRate;
+  //   const handle = setInterval(() => {
+  //     // Ramp surge toward target
+  //     const surgeDiff = targetSurgeRef.current - surgeRef.current;
+  //     const newSurge =
+  //       Math.abs(surgeDiff) <= config.surgeRamp
+  //         ? targetSurgeRef.current
+  //         : surgeRef.current + Math.sign(surgeDiff) * config.surgeRamp;
 
-      // Ramp yaw toward targetamp;
-      const yawDiff = targetYawRef.current - yawRef.current;
-      const newYaw =
-        Math.abs(yawDiff) <= config.yawRamp
-          ? targetYawRef.current
-          : yawRef.current + Math.sign(yawDiff) * config.yawRamp;
+  //     // Ramp yaw toward targetamp;
+  //     const yawDiff = targetYawRef.current - yawRef.current;
+  //     const newYaw =
+  //       Math.abs(yawDiff) <= config.yawRamp
+  //         ? targetYawRef.current
+  //         : yawRef.current + Math.sign(yawDiff) * config.yawRamp;
 
-      setSurge(newSurge);
-      setYaw(newYaw);
-      surgeRef.current = newSurge;
-      yawRef.current = newYaw;
-      publishWrench(newSurge, newYaw);
-    }, intervalMs);
+  //     setSurge(newSurge);
+  //     setYaw(newYaw);
+  //     surgeRef.current = newSurge;
+  //     yawRef.current = newYaw;
+  //     publishWrench(newSurge, newYaw);
+  //   }, intervalMs);
 
-    return () => {
-      clearInterval(handle);
-    };
-  }, [heldButton, config.publishRate, publishWrench]);
+  //   return () => {
+  //     clearInterval(handle);
+  //   };
+  // }, [heldButton, config.publishRate, publishWrench]);
 
   const handleSliderRelease = useCallback(() => {
     if (config.zeroOnRelease) {
