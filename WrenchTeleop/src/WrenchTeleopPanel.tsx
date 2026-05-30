@@ -17,6 +17,9 @@ type PanelState = {
   yawRamp: number; // N·m per tick
   buttonSurgeRamp: number; // N/tick for buttons
   buttonYawRamp: number; // N·m/tick for buttons
+  heaveMin: number;
+  heaveMax: number;
+  buttonHeaveRamp: number;
 };
 
 const DEFAULT_STATE: PanelState = {
@@ -33,6 +36,9 @@ const DEFAULT_STATE: PanelState = {
   yawRamp: 1,
   buttonSurgeRamp: 2, // buttons ramp at configurable rate
   buttonYawRamp: 2,
+  heaveMin: -24,
+  heaveMax: 32,
+  buttonHeaveRamp: 2,
 };
 
 const LIMITS = {
@@ -60,6 +66,11 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
   surgeRef.current = surge;
   yawRef.current = yaw;
 
+  const [heave, setHeave] = useState(0);
+  const heaveRef = useRef(heave);
+  const targetHeaveRef = useRef(0);
+  heaveRef.current = heave;
+
   // We use a layout effect to setup render handling for our panel. We also setup some topic subscriptions.
   useLayoutEffect(() => {
     context.onRender = (_renderState, done) => {
@@ -82,11 +93,11 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
   }, [renderDone]);
 
   const publishWrench = useCallback(
-    (surgeVal: number, yawVal: number) => {
+    (surgeVal: number, yawVal: number, heaveVal:number = 0) => {
       console.log("publishing to", config.topic, surgeVal, yawVal); // add this
       // const now = Date.now();
       context.publish?.(config.topic, {
-        force: { x: surgeVal, y: 0, z: 0 },
+        force: { x: surgeVal, y: 0, z: heaveVal },
         torque: { x: 0, y: 0, z: yawVal },
       });
     },
@@ -111,11 +122,22 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
           ? targetYawRef.current
           : yawRef.current + Math.sign(yawDiff) * config.buttonYawRamp;
 
+      const heaveDiff = targetHeaveRef.current - heaveRef.current;
+      const newHeave =
+        Math.abs(heaveDiff) <= config.buttonHeaveRamp
+          ? targetHeaveRef.current
+          : heaveRef.current + Math.sign(heaveDiff) * config.buttonHeaveRamp;
+
+
       setSurge(newSurge);
       setYaw(newYaw);
       surgeRef.current = newSurge;
       yawRef.current = newYaw;
       publishWrench(newSurge, newYaw);
+
+      setHeave(newHeave);
+      heaveRef.current = newHeave;
+      publishWrench(newSurge, newYaw, newHeave);
     }, intervalMs);
 
     return () => {
@@ -132,10 +154,12 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
         case "forward":
           targetSurgeRef.current = config.surgeMax;
           targetYawRef.current = 0;
+          targetHeaveRef.current = 0;
           break;
         case "backward":
           targetSurgeRef.current = config.surgeMin;
           targetYawRef.current = 0;
+          targetHeaveRef.current = 0;
           break;
         case "left":
           targetSurgeRef.current = 0;
@@ -155,6 +179,8 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
     setHeldButton(undefined);
     targetSurgeRef.current = 0;
     targetYawRef.current = 0;
+    targetHeaveRef.current = 0;
+    setHeave(0);
     if (config.zeroOnRelease) {
       setSurge(0);
       setYaw(0);
@@ -199,7 +225,7 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
       setYaw(0);
       publishWrench(0, 0);
     } else {
-      publishWrench(surge, yaw);
+      publishWrench(surge, yaw, heave);
     }
   }, [config.zeroOnRelease, surge, yaw, publishWrench]);
 
