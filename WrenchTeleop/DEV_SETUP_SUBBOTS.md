@@ -122,3 +122,6 @@ ros2 run <your_teleop_package> <your_teleop_node>
 ├── steelhead.sh        # Gazebo + rosbridge only
 └── lichtblick.sh       # Lichtblick only
 ```
+
+## Steelhead Integration
+Be sure to use the lichtblick_gazebo_launch.py in steelhead bringup (can be found in lichtblick branch of steelhead)
