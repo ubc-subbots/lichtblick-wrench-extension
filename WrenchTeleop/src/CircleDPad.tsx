@@ -8,7 +8,7 @@ type DPadProps = {
 };
 
 export function CircleDPad({ heldButton, onButtonDown, onButtonUp }: DPadProps): ReactElement {
-  const SIZE = 360;
+  const SIZE = 300;
   const CENTER = SIZE / 2;
   const OUTER = SIZE * 0.45;
   const INNER = SIZE * 0.14;
@@ -43,12 +43,18 @@ export function CircleDPad({ heldButton, onButtonDown, onButtonUp }: DPadProps):
     };
   };
 
-  const wedges: { button: NonNullable<HeldButton>; start: number; end: number; label: string }[] = [
-    { button: "forward", start: 225 + GAP, end: 315 - GAP, label: "▲" },
-    { button: "right", start: 315 + GAP, end: 405 - GAP, label: "▶" },
-    { button: "backward", start: 45 + GAP, end: 135 - GAP, label: "▼" },
-    { button: "left", start: 135 + GAP, end: 225 - GAP, label: "◀" },
+  // Main 4 directional wedges: forward/back = surge, left/right = strafe
+  const wedges: { button: NonNullable<HeldButton>; start: number; end: number; label: string; sublabel: string }[] = [
+    { button: "forward", start: 225 + GAP, end: 315 - GAP, label: "▲", sublabel: "W" },
+    { button: "right",   start: 315 + GAP, end: 405 - GAP, label: "▶", sublabel: "D" },
+    { button: "backward",start: 45  + GAP, end: 135 - GAP, label: "▼", sublabel: "S" },
+    { button: "left",    start: 135 + GAP, end: 225 - GAP, label: "◀", sublabel: "A" },
   ];
+
+  const btnStyle = (active: boolean): React.CSSProperties => ({
+    cursor: "pointer",
+    fill: active ? "#0078d4" : "#2a2a2a",
+  });
 
   return (
     <svg
@@ -58,7 +64,7 @@ export function CircleDPad({ heldButton, onButtonDown, onButtonUp }: DPadProps):
       style={{ touchAction: "none", userSelect: "none" }}
     >
       {/* Directional wedges */}
-      {wedges.map(({ button, start, end, label }) => {
+      {wedges.map(({ button, start, end, label, sublabel }) => {
         const active = heldButton === button;
         const pos = labelPos(start, end);
         return (
@@ -77,49 +83,62 @@ export function CircleDPad({ heldButton, onButtonDown, onButtonUp }: DPadProps):
             />
             <text
               x={pos.x}
-              y={pos.y}
+              y={pos.y - 5}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize="14"
+              fontSize="13"
               fill={active ? "#fff" : "#aaa"}
               style={{ pointerEvents: "none" }}
             >
               {label}
             </text>
+            <text
+              x={pos.x}
+              y={pos.y + 9}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize="9"
+              fill={active ? "#cce4ff" : "#666"}
+              style={{ pointerEvents: "none" }}
+            >
+              {sublabel}
+            </text>
           </g>
         );
       })}
 
-      {/* Z-axis up/down buttons in center — OUTSIDE the wedges map */}
+      {/* Center circle — split into up (Q) top half and down (Z) bottom half */}
+      {/* Up half */}
       <path
         d={`M ${CENTER - INNER + 2} ${CENTER} A ${INNER - 2} ${INNER - 2} 0 0 1 ${CENTER + INNER - 2} ${CENTER} Z`}
         fill={heldButton === "up" ? "#0078d4" : "#2a2a2a"}
         stroke="#444"
         strokeWidth="1"
-        style={{ cursor: "pointer" }}
+        style={btnStyle(heldButton === "up")}
         onMouseDown={() => onButtonDown("up")}
         onMouseUp={onButtonUp}
         onMouseLeave={heldButton === "up" ? onButtonUp : undefined}
         onTouchStart={(e) => { e.preventDefault(); onButtonDown("up"); }}
         onTouchEnd={onButtonUp}
       />
-      <text x={CENTER} y={CENTER - 8} textAnchor="middle" dominantBaseline="central"
-        fontSize="10" fill={heldButton === "up" ? "#fff" : "#aaa"} style={{ pointerEvents: "none" }}>▲Z</text>
+      <text x={CENTER} y={CENTER - 9} textAnchor="middle" dominantBaseline="central"
+        fontSize="8" fill={heldButton === "up" ? "#fff" : "#888"} style={{ pointerEvents: "none" }}>Q↑Z</text>
 
+      {/* Down half */}
       <path
         d={`M ${CENTER - INNER + 2} ${CENTER} A ${INNER - 2} ${INNER - 2} 0 0 0 ${CENTER + INNER - 2} ${CENTER} Z`}
         fill={heldButton === "down" ? "#0078d4" : "#1a1a1a"}
         stroke="#444"
         strokeWidth="1"
-        style={{ cursor: "pointer" }}
+        style={btnStyle(heldButton === "down")}
         onMouseDown={() => onButtonDown("down")}
         onMouseUp={onButtonUp}
         onMouseLeave={heldButton === "down" ? onButtonUp : undefined}
         onTouchStart={(e) => { e.preventDefault(); onButtonDown("down"); }}
         onTouchEnd={onButtonUp}
       />
-      <text x={CENTER} y={CENTER + 8} textAnchor="middle" dominantBaseline="central"
-        fontSize="10" fill={heldButton === "down" ? "#fff" : "#aaa"} style={{ pointerEvents: "none" }}>▼Z</text>
+      <text x={CENTER} y={CENTER + 9} textAnchor="middle" dominantBaseline="central"
+        fontSize="8" fill={heldButton === "down" ? "#fff" : "#888"} style={{ pointerEvents: "none" }}>Z↓Z</text>
     </svg>
   );
 }
