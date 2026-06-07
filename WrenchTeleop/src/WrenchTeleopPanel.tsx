@@ -9,11 +9,11 @@ import { HeldButton } from "./types";
 type PanelState = {
   topic: string;
   actionsTopic: string;
-  forceMag: number;   // N — magnitude for all force axes
-  torqueMag: number;  // N·m — magnitude for all torque axes
+  forceMag: number;
+  torqueMag: number;
   zeroOnRelease: boolean;
   publishRate: number;
-  buttonRamp: number; // N or N·m per tick, ramp rate for dpad buttons
+  buttonRamp: number;
 };
 
 const DEFAULT_STATE: PanelState = {
@@ -26,25 +26,12 @@ const DEFAULT_STATE: PanelState = {
   buttonRamp: 2,
 };
 
-// Full 6-DOF force/torque state
 type WrenchState = {
-  fx: number; // surge (W/S)
-  fy: number; // strafe (A/D)
-  fz: number; // heave (Q/Z)
-  tx: number; // pitch (↑/↓)
-  ty: number; // roll (E/C)
-  tz: number; // yaw (←/→)
+  fx: number; fy: number; fz: number;
+  tx: number; ty: number; tz: number;
 };
 
 const ZERO_WRENCH: WrenchState = { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 };
-
-// ─── Key → wrench axis mapping (matches keyboard_teleop.py) ───────────────────
-// w/s → force.x (surge)
-// a/d → force.y (strafe)
-// q/z → force.z (heave)
-// ↑/↓ → torque.x (pitch)
-// e/c → torque.y (roll)
-// ←/→ → torque.z (yaw)
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
@@ -56,25 +43,16 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
   });
   const [showConfig, setShowConfig] = useState(false);
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
-
-  // D-pad button state
   const [heldButton, setHeldButton] = useState<HeldButton>(undefined);
-
-  // Live wrench display values
   const [wrench, setWrench] = useState<WrenchState>(ZERO_WRENCH);
+  const [, forceRender] = useState(0); // for keyboard key indicator re-renders
+
   const wrenchRef = useRef<WrenchState>(ZERO_WRENCH);
-
-  // D-pad ramp targets
   const targetRef = useRef<WrenchState>(ZERO_WRENCH);
-
-  // Track which keyboard keys are currently held
   const keysHeld = useRef<Set<string>>(new Set());
 
-  // ─── Advertise ──────────────────────────────────────────────────────────────
   useLayoutEffect(() => {
-    context.onRender = (_renderState, done) => {
-      setRenderDone(() => done);
-    };
+    context.onRender = (_renderState, done) => { setRenderDone(() => done); };
     context.watch("currentTime");
     context.advertise?.(config.topic, "geometry_msgs/Wrench", {
       latching: false,
@@ -84,78 +62,58 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
 
   useEffect(() => { renderDone?.(); }, [renderDone]);
 
-  // ─── Publish ────────────────────────────────────────────────────────────────
-  const publish = useCallback(
-    (w: WrenchState) => {
-      context.publish?.(config.topic, {
-        force:  { x: w.fx, y: w.fy, z: w.fz },
-        torque: { x: w.tx, y: w.ty, z: w.tz },
-      });
-    },
-    [context, config.topic],
-  );
+  const publish = useCallback((w: WrenchState) => {
+    context.publish?.(config.topic, {
+      force:  { x: w.fx, y: w.fy, z: w.fz },
+      torque: { x: w.tx, y: w.ty, z: w.tz },
+    });
+  }, [context, config.topic]);
 
-  // ─── Action buttons (claw / torpedo) ────────────────────────────────────────
-  const sendAction = useCallback(
-    (input: string) => {
-      context.callService?.(config.actionsTopic, { input });
-    },
-    [context, config.actionsTopic],
-  );
+  const sendAction = useCallback((input: string) => {
+    context.callService?.(config.actionsTopic, { input });
+  }, [context, config.actionsTopic]);
 
-  // ─── Keyboard input ─────────────────────────────────────────────────────────
+  // ─── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!keyboardEnabled) return;
 
-    const buildWrenchFromKeys = (): WrenchState => {
+    const buildWrench = (): WrenchState => {
       const { forceMag, torqueMag } = config;
-      const keys = keysHeld.current;
+      const k = keysHeld.current;
       return {
-        fx: (keys.has("w") ? forceMag  : 0) + (keys.has("s") ? -forceMag  : 0),
-        fy: (keys.has("a") ? forceMag  : 0) + (keys.has("d") ? -forceMag  : 0),
-        fz: (keys.has("q") ? forceMag  : 0) + (keys.has("z") ? -forceMag  : 0),
-        tx: (keys.has("ArrowUp")   ? -torqueMag : 0) + (keys.has("ArrowDown")  ? torqueMag  : 0),
-        ty: (keys.has("e") ? -torqueMag : 0) + (keys.has("c") ? torqueMag : 0),
-        tz: (keys.has("ArrowLeft") ? torqueMag  : 0) + (keys.has("ArrowRight") ? -torqueMag : 0),
+        fx: (k.has("w") ? forceMag : 0) + (k.has("s") ? -forceMag : 0),
+        fy: (k.has("a") ? forceMag : 0) + (k.has("d") ? -forceMag : 0),
+        fz: (k.has("q") ? forceMag : 0) + (k.has("z") ? -forceMag : 0),
+        tx: (k.has("ArrowUp") ? -torqueMag : 0) + (k.has("ArrowDown") ? torqueMag : 0),
+        ty: (k.has("e") ? -torqueMag : 0) + (k.has("c") ? torqueMag : 0),
+        tz: (k.has("ArrowLeft") ? torqueMag : 0) + (k.has("ArrowRight") ? -torqueMag : 0),
       };
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // Don't capture if user is typing in an input
       if ((e.target as HTMLElement).tagName === "INPUT") return;
-
-      const key = e.key === "ArrowUp" || e.key === "ArrowDown" ||
-                  e.key === "ArrowLeft" || e.key === "ArrowRight"
-                  ? e.key : e.key.toLowerCase();
-
-      // Action keys — fire once on press
+      const key = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) ? e.key : e.key.toLowerCase();
       if (key === "o") { sendAction("claw"); return; }
       if (key === "p") { sendAction("torpedo"); return; }
-
       if (!keysHeld.current.has(key)) {
         keysHeld.current.add(key);
-        const w = buildWrenchFromKeys();
+        const w = buildWrench();
         wrenchRef.current = w;
         setWrench(w);
         publish(w);
+        forceRender(n => n + 1);
       }
-      // Prevent arrow keys scrolling the panel
-      if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
-        e.preventDefault();
-      }
+      if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      const key = e.key === "ArrowUp" || e.key === "ArrowDown" ||
-                  e.key === "ArrowLeft" || e.key === "ArrowRight"
-                  ? e.key : e.key.toLowerCase();
+      const key = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) ? e.key : e.key.toLowerCase();
       keysHeld.current.delete(key);
-      const w = buildWrenchFromKeys();
+      const w = buildWrench();
       wrenchRef.current = w;
       setWrench(w);
-      if (config.zeroOnRelease || keysHeld.current.size === 0) {
-        publish(w);
-      }
+      publish(w);
+      forceRender(n => n + 1);
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -163,7 +121,6 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      // Zero out on disable
       keysHeld.current.clear();
       wrenchRef.current = ZERO_WRENCH;
       setWrench(ZERO_WRENCH);
@@ -174,16 +131,12 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
   // ─── D-pad ramp loop ────────────────────────────────────────────────────────
   useEffect(() => {
     if (heldButton == undefined) return;
-
     const intervalMs = 1000 / config.publishRate;
     const handle = setInterval(() => {
-      const ramp = (current: number, target: number) => {
-        const diff = target - current;
-        return Math.abs(diff) <= config.buttonRamp
-          ? target
-          : current + Math.sign(diff) * config.buttonRamp;
+      const ramp = (cur: number, tgt: number) => {
+        const d = tgt - cur;
+        return Math.abs(d) <= config.buttonRamp ? tgt : cur + Math.sign(d) * config.buttonRamp;
       };
-
       const next: WrenchState = {
         fx: ramp(wrenchRef.current.fx, targetRef.current.fx),
         fy: ramp(wrenchRef.current.fy, targetRef.current.fy),
@@ -192,37 +145,32 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
         ty: ramp(wrenchRef.current.ty, targetRef.current.ty),
         tz: ramp(wrenchRef.current.tz, targetRef.current.tz),
       };
-
       wrenchRef.current = next;
       setWrench(next);
       publish(next);
     }, intervalMs);
-
     return () => clearInterval(handle);
   }, [heldButton, config.publishRate, config.buttonRamp, publish]);
 
   // ─── D-pad handlers ─────────────────────────────────────────────────────────
-  const handleButtonDown = useCallback(
-    (button: NonNullable<HeldButton>) => {
-      const { forceMag, torqueMag } = config;
-      const t = { ...ZERO_WRENCH };
-      switch (button) {
-        case "forward":    t.fx =  forceMag;  break;
-        case "backward":   t.fx = -forceMag;  break;
-        case "left":       t.fy =  forceMag;  break;
-        case "right":      t.fy = -forceMag;  break;
-        case "up":         t.fz =  forceMag;  break;
-        case "down":       t.fz = -forceMag;  break;
-        case "pitch_up":   t.tx = -torqueMag; break;
-        case "pitch_down": t.tx =  torqueMag; break;
-        case "roll_left":  t.ty =  torqueMag; break;
-        case "roll_right": t.ty = -torqueMag; break;
-      }
-      targetRef.current = t;
-      setHeldButton(button);
-    },
-    [config],
-  );
+  const handleButtonDown = useCallback((button: NonNullable<HeldButton>) => {
+    const { forceMag, torqueMag } = config;
+    const t = { ...ZERO_WRENCH };
+    switch (button) {
+      case "forward":    t.fx =  forceMag;  break;
+      case "backward":   t.fx = -forceMag;  break;
+      case "left":       t.fy =  forceMag;  break;
+      case "right":      t.fy = -forceMag;  break;
+      case "up":         t.fz =  forceMag;  break;
+      case "down":       t.fz = -forceMag;  break;
+      case "pitch_up":   t.tx = -torqueMag; break;
+      case "pitch_down": t.tx =  torqueMag; break;
+      case "roll_left":  t.ty =  torqueMag; break;
+      case "roll_right": t.ty = -torqueMag; break;
+    }
+    targetRef.current = t;
+    setHeldButton(button);
+  }, [config]);
 
   const handleButtonUp = useCallback(() => {
     setHeldButton(undefined);
@@ -234,144 +182,170 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
     }
   }, [config.zeroOnRelease, publish]);
 
-  // ─── Config ─────────────────────────────────────────────────────────────────
-  const saveConfig = useCallback(
-    (updates: Partial<PanelState>) => {
-      const next = { ...config, ...updates };
-      setConfig(next);
-      context.saveState?.(next);
-    },
-    [config, context],
-  );
+  const saveConfig = useCallback((updates: Partial<PanelState>) => {
+    const next = { ...config, ...updates };
+    setConfig(next);
+    context.saveState?.(next);
+  }, [config, context]);
 
-  // ─── Styles ─────────────────────────────────────────────────────────────────
-  const actionBtnStyle = (color: string): React.CSSProperties => ({
-    padding: "8px 18px",
-    fontSize: "0.85rem",
-    fontWeight: 600,
-    borderRadius: "6px",
-    border: `1px solid ${color}`,
-    background: "transparent",
-    color: color,
-    cursor: "pointer",
-    letterSpacing: "0.05em",
-  });
+  // ─── Render helpers ─────────────────────────────────────────────────────────
 
-  const kbKeyStyle = (active: boolean): React.CSSProperties => ({
-    display: "inline-block",
-    padding: "2px 6px",
-    fontSize: "0.7rem",
-    borderRadius: "3px",
-    border: "1px solid #555",
-    background: active ? "#0078d4" : "#222",
-    color: active ? "#fff" : "#888",
-    fontFamily: "monospace",
-    minWidth: "22px",
-    textAlign: "center",
-  });
+  const KeyBadge = ({ k: key, label }: { k: string; label: string }) => {
+    const active = keysHeld.current.has(key);
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: "3px",
+      }}>
+        <div style={{
+          width: "36px", height: "36px", borderRadius: "6px", display: "flex",
+          alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700,
+          fontFamily: "monospace",
+          background: active ? "#0078d4" : "#1e1e1e",
+          border: `2px solid ${active ? "#4db3ff" : "#3a3a3a"}`,
+          color: active ? "#fff" : "#666",
+          boxShadow: active ? "0 0 8px #0078d455" : "none",
+          transition: "all 0.05s",
+        }}>{label}</div>
+      </div>
+    );
+  };
 
-  const keys = keysHeld.current;
+  const WrenchBar = ({ label, value, max }: { label: string; value: number; max: number }) => {
+    const pct = Math.abs(value) / max * 100;
+    const positive = value >= 0;
+    const active = value !== 0;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ width: "90px", fontSize: "14px", color: "#888", textAlign: "right", flexShrink: 0 }}>{label}</div>
+        <div style={{ flex: 1, height: "12px", background: "#1a1a1a", borderRadius: "5px", overflow: "hidden", position: "relative" }}>
+          <div style={{
+            position: "absolute",
+            height: "100%",
+            width: `${pct}%`,
+            left: positive ? "50%" : `${50 - pct}%`,
+            background: active ? "#0078d4" : "#333",
+            borderRadius: "3px",
+            transition: "all 0.05s",
+          }} />
+          <div style={{ position: "absolute", left: "50%", top: 0, width: "1px", height: "100%", background: "#333" }} />
+        </div>
+        <div style={{
+          width: "52px", fontSize: "14px", fontFamily: "monospace", textAlign: "right", flexShrink: 0,
+          color: active ? "#4db3ff" : "#444",
+        }}>{value.toFixed(1)}</div>
+      </div>
+    );
+  };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: "0.75rem", fontFamily: "sans-serif", color: "#ddd", fontSize: "0.85rem" }}>
+    <div style={{ padding: "14px", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#ddd", background: "#141414", minHeight: "100%", boxSizing: "border-box" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-        <h3 style={{ margin: 0, fontSize: "1rem" }}>Wrench Teleop</h3>
-        <div style={{ display: "flex", gap: "6px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+        <div>
+          <div style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "0.05em", color: "#fff" }}>WRENCH TELEOP</div>
+          <div style={{ fontSize: "11px", color: "#555", marginTop: "1px" }}>{config.topic}</div>
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
           <button
             onClick={() => setKeyboardEnabled(v => !v)}
             style={{
-              fontSize: "0.75rem",
-              padding: "2px 10px",
-              borderRadius: "4px",
-              border: `1px solid ${keyboardEnabled ? "#0078d4" : "#555"}`,
-              background: keyboardEnabled ? "#0078d420" : "none",
-              color: keyboardEnabled ? "#4db3ff" : "#aaa",
+              fontSize: "13px", padding: "6px 14px", borderRadius: "6px", fontWeight: 600,
+              border: `1.5px solid ${keyboardEnabled ? "#0078d4" : "#444"}`,
+              background: keyboardEnabled ? "#0078d422" : "#1e1e1e",
+              color: keyboardEnabled ? "#4db3ff" : "#888",
               cursor: "pointer",
-              fontWeight: keyboardEnabled ? 600 : 400,
             }}
           >
             ⌨ {keyboardEnabled ? "KB ON" : "KB OFF"}
           </button>
           <button
             onClick={() => setShowConfig(v => !v)}
-            style={{ fontSize: "0.75rem", background: "none", border: "1px solid #555", color: "#aaa", borderRadius: "4px", padding: "2px 8px", cursor: "pointer" }}
+            style={{ fontSize: "13px", padding: "6px 12px", borderRadius: "6px", border: "1.5px solid #444", background: "#1e1e1e", color: "#888", cursor: "pointer" }}
           >
-            {showConfig ? "✕ Config" : "⚙ Config"}
+            ⚙
           </button>
         </div>
       </div>
 
-      {/* Config panel */}
+      {/* Config */}
       {showConfig && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem", padding: "0.5rem", background: "#1a1a1a", borderRadius: "6px" }}>
-          <label style={{ gridColumn: "1 / -1" }}>
-            Topic
-            <input type="text" value={config.topic}
-              onChange={(e) => saveConfig({ topic: e.target.value })}
-              style={{ display: "block", width: "100%", marginTop: "2px", background: "#222", border: "1px solid #444", color: "#ddd", padding: "3px 6px", borderRadius: "4px" }}
-            />
-          </label>
-          <label>
-            Force Mag (N)
-            <input type="number" value={config.forceMag} min={0} max={50}
-              onChange={(e) => saveConfig({ forceMag: Number(e.target.value) })}
-              style={{ display: "block", width: "80px", marginTop: "2px", background: "#222", border: "1px solid #444", color: "#ddd", padding: "3px 6px", borderRadius: "4px" }}
-            />
-          </label>
-          <label>
-            Torque Mag (N·m)
-            <input type="number" value={config.torqueMag} min={0} max={50}
-              onChange={(e) => saveConfig({ torqueMag: Number(e.target.value) })}
-              style={{ display: "block", width: "80px", marginTop: "2px", background: "#222", border: "1px solid #444", color: "#ddd", padding: "3px 6px", borderRadius: "4px" }}
-            />
-          </label>
-          <label>
-            Button Ramp (N/tick)
-            <input type="number" value={config.buttonRamp} min={1} max={15}
-              onChange={(e) => saveConfig({ buttonRamp: Number(e.target.value) })}
-              style={{ display: "block", width: "80px", marginTop: "2px", background: "#222", border: "1px solid #444", color: "#ddd", padding: "3px 6px", borderRadius: "4px" }}
-            />
-          </label>
-          <label>
-            Publish Rate (Hz)
-            <input type="number" value={config.publishRate} min={1} max={50}
-              onChange={(e) => saveConfig({ publishRate: Number(e.target.value) })}
-              style={{ display: "block", width: "80px", marginTop: "2px", background: "#222", border: "1px solid #444", color: "#ddd", padding: "3px 6px", borderRadius: "4px" }}
-            />
-          </label>
-          <label style={{ gridColumn: "1 / -1" }}>
-            <input type="checkbox" checked={config.zeroOnRelease}
-              onChange={(e) => saveConfig({ zeroOnRelease: e.target.checked })}
-            />{" "}Zero on release
-          </label>
+        <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "13px" }}>
+            {[
+              { label: "Force Mag (N)", key: "forceMag" as const, val: config.forceMag },
+              { label: "Torque Mag (N·m)", key: "torqueMag" as const, val: config.torqueMag },
+              { label: "Button Ramp", key: "buttonRamp" as const, val: config.buttonRamp },
+              { label: "Publish Rate (Hz)", key: "publishRate" as const, val: config.publishRate },
+            ].map(({ label, key, val }) => (
+              <label key={key}>
+                <div style={{ color: "#888", marginBottom: "4px" }}>{label}</div>
+                <input type="number" value={val} min={0} max={100}
+                  onChange={(e) => saveConfig({ [key]: Number(e.target.value) })}
+                  style={{ width: "100%", background: "#111", border: "1px solid #333", color: "#ddd", padding: "5px 8px", borderRadius: "5px", fontSize: "13px" }}
+                />
+              </label>
+            ))}
+            <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input type="checkbox" checked={config.zeroOnRelease}
+                onChange={(e) => saveConfig({ zeroOnRelease: e.target.checked })} />
+              <span style={{ color: "#888", fontSize: "13px" }}>Zero on release</span>
+            </label>
+          </div>
         </div>
       )}
 
       {/* Keyboard legend */}
       {keyboardEnabled && (
-        <div style={{ background: "#111", border: "1px solid #333", borderRadius: "6px", padding: "0.5rem", marginBottom: "0.75rem" }}>
-          <div style={{ fontSize: "0.7rem", color: "#666", marginBottom: "4px" }}>KEYBOARD ACTIVE — click panel to focus</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: "0.72rem" }}>
-            <div><span style={kbKeyStyle(keys.has("w"))}>W</span> <span style={kbKeyStyle(keys.has("s"))}>S</span> Surge</div>
-            <div><span style={kbKeyStyle(keys.has("ArrowUp"))}>↑</span> <span style={kbKeyStyle(keys.has("ArrowDown"))}>↓</span> Pitch</div>
-            <div><span style={kbKeyStyle(keys.has("a"))}>A</span> <span style={kbKeyStyle(keys.has("d"))}>D</span> Strafe</div>
-            <div><span style={kbKeyStyle(keys.has("ArrowLeft"))}>←</span> <span style={kbKeyStyle(keys.has("ArrowRight"))}>→</span> Yaw</div>
-            <div><span style={kbKeyStyle(keys.has("q"))}>Q</span> <span style={kbKeyStyle(keys.has("z"))}>Z</span> Heave</div>
-            <div><span style={kbKeyStyle(keys.has("e"))}>E</span> <span style={kbKeyStyle(keys.has("c"))}>C</span> Roll</div>
-            <div><span style={kbKeyStyle(false)}>O</span> Claw &nbsp; <span style={kbKeyStyle(false)}>P</span> Torpedo</div>
+        <div style={{ background: "#0d1a26", border: "1px solid #1a3a55", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "#4db3ff88", marginBottom: "10px", letterSpacing: "0.08em" }}>KEYBOARD ACTIVE — click panel to focus</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {/* Left column — forces */}
+            <div>
+              <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px" }}>FORCE</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="w" label="W" /><KeyBadge k="s" label="S" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Surge X</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="a" label="A" /><KeyBadge k="d" label="D" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Strafe Y</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="q" label="Q" /><KeyBadge k="z" label="Z" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Heave Z</span>
+                </div>
+              </div>
+            </div>
+            {/* Right column — torques */}
+            <div>
+              <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px" }}>TORQUE</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="ArrowUp" label="↑" /><KeyBadge k="ArrowDown" label="↓" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Pitch X</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="ArrowLeft" label="←" /><KeyBadge k="ArrowRight" label="→" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Yaw Z</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <KeyBadge k="e" label="E" /><KeyBadge k="c" label="C" />
+                  <span style={{ fontSize: "12px", color: "#666" }}>Roll Y</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* D-pad + secondary buttons */}
-      <div style={{ display: "flex", gap: "12px", alignItems: "center", justifyContent: "center" }}>
-        <CircleDPad heldButton={heldButton} onButtonDown={handleButtonDown} onButtonUp={handleButtonUp} />
+      <div style={{ display: "flex", gap: "16px", alignItems: "center", justifyContent: "center", marginBottom: "14px" }}>
+        <CircleDPad heldButton={heldButton} onButtonDown={handleButtonDown} onButtonUp={handleButtonUp} size={320} />
 
-        {/* Secondary DOF buttons (pitch, roll, yaw) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {[
             { btn: "pitch_up"   as const, label: "↑ Pitch", key: "↑" },
             { btn: "pitch_down" as const, label: "↓ Pitch", key: "↓" },
@@ -380,19 +354,13 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
           ].map(({ btn, label, key }) => {
             const active = heldButton === btn;
             return (
-              <button
-                key={btn}
+              <button key={btn}
                 style={{
-                  padding: "6px 10px",
-                  fontSize: "0.75rem",
-                  borderRadius: "5px",
-                  border: `1px solid ${active ? "#0078d4" : "#444"}`,
-                  background: active ? "#0078d4" : "#2a2a2a",
-                  color: active ? "#fff" : "#bbb",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  minWidth: "80px",
-                  textAlign: "left",
+                  padding: "10px 14px", fontSize: "13px", borderRadius: "7px", fontWeight: 500,
+                  border: `1.5px solid ${active ? "#0078d4" : "#333"}`,
+                  background: active ? "#0078d4" : "#1e1e1e",
+                  color: active ? "#fff" : "#999",
+                  cursor: "pointer", whiteSpace: "nowrap", minWidth: "100px", textAlign: "left",
                 }}
                 onMouseDown={() => handleButtonDown(btn)}
                 onMouseUp={handleButtonUp}
@@ -400,38 +368,50 @@ function WrenchTeleopPanel({ context }: { context: PanelExtensionContext }): Rea
                 onTouchStart={(e) => { e.preventDefault(); handleButtonDown(btn); }}
                 onTouchEnd={handleButtonUp}
               >
-                {label} <span style={{ fontSize: "0.65rem", color: active ? "#cce4ff" : "#555" }}>[{key}]</span>
+                {label} <span style={{ fontSize: "11px", color: active ? "#cce4ff" : "#444" }}>[{key}]</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Force/Torque readout */}
-      <div style={{ marginTop: "0.75rem", background: "#111", borderRadius: "6px", padding: "0.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 12px", fontSize: "0.75rem", fontFamily: "monospace" }}>
-        <div style={{ color: "#666", gridColumn: "1 / -1", marginBottom: "2px" }}>WRENCH OUTPUT</div>
-        <div>Fx (surge): <span style={{ color: wrench.fx !== 0 ? "#4db3ff" : "#555" }}>{wrench.fx.toFixed(1)} N</span></div>
-        <div>Tx (pitch): <span style={{ color: wrench.tx !== 0 ? "#4db3ff" : "#555" }}>{wrench.tx.toFixed(1)} N·m</span></div>
-        <div>Fy (strafe): <span style={{ color: wrench.fy !== 0 ? "#4db3ff" : "#555" }}>{wrench.fy.toFixed(1)} N</span></div>
-        <div>Ty (roll):  <span style={{ color: wrench.ty !== 0 ? "#4db3ff" : "#555" }}>{wrench.ty.toFixed(1)} N·m</span></div>
-        <div>Fz (heave): <span style={{ color: wrench.fz !== 0 ? "#4db3ff" : "#555" }}>{wrench.fz.toFixed(1)} N</span></div>
-        <div>Tz (yaw):   <span style={{ color: wrench.tz !== 0 ? "#4db3ff" : "#555" }}>{wrench.tz.toFixed(1)} N·m</span></div>
+      {/* Wrench readout bars */}
+      <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: "8px", padding: "12px", marginBottom: "14px" }}>
+        <div style={{ fontSize: "13px", color: "#555", letterSpacing: "0.08em", marginBottom: "10px" }}>WRENCH OUTPUT</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <WrenchBar label="Surge Fx" value={wrench.fx} max={config.forceMag} />
+          <WrenchBar label="Strafe Fy" value={wrench.fy} max={config.forceMag} />
+          <WrenchBar label="Heave Fz" value={wrench.fz} max={config.forceMag} />
+          <WrenchBar label="Pitch Tx" value={wrench.tx} max={config.torqueMag} />
+          <WrenchBar label="Roll Ty" value={wrench.ty} max={config.torqueMag} />
+          <WrenchBar label="Yaw Tz" value={wrench.tz} max={config.torqueMag} />
+        </div>
       </div>
 
       {/* Action buttons */}
-      <div style={{ marginTop: "0.75rem", display: "flex", gap: "10px" }}>
-        <button style={actionBtnStyle("#e8a000")} onClick={() => sendAction("claw")}>
-          🦀 CLAW <span style={{ fontSize: "0.65rem", opacity: 0.6 }}>[O]</span>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button
+          onClick={() => sendAction("claw")}
+          style={{
+            flex: 1, padding: "12px", fontSize: "14px", fontWeight: 700, borderRadius: "8px",
+            border: "1.5px solid #b87700", background: "#1a1400", color: "#e8a000",
+            cursor: "pointer", letterSpacing: "0.05em",
+          }}
+        >
+          🦀 CLAW <span style={{ fontSize: "11px", opacity: 0.5, fontWeight: 400 }}>[O]</span>
         </button>
-        <button style={actionBtnStyle("#cc3333")} onClick={() => sendAction("torpedo")}>
-          🚀 TORPEDO <span style={{ fontSize: "0.65rem", opacity: 0.6 }}>[P]</span>
+        <button
+          onClick={() => sendAction("torpedo")}
+          style={{
+            flex: 1, padding: "12px", fontSize: "14px", fontWeight: 700, borderRadius: "8px",
+            border: "1.5px solid #992222", background: "#1a0000", color: "#cc3333",
+            cursor: "pointer", letterSpacing: "0.05em",
+          }}
+        >
+          🚀 TORPEDO <span style={{ fontSize: "11px", opacity: 0.5, fontWeight: 400 }}>[P]</span>
         </button>
       </div>
 
-      {/* Footer */}
-      <div style={{ marginTop: "0.5rem", fontSize: "0.65rem", color: "#444" }}>
-        Topic: <code style={{ color: "#555" }}>{config.topic}</code> · {config.publishRate} Hz
-      </div>
     </div>
   );
 }
